@@ -65,38 +65,112 @@ function findFeedContainer() {
   return null;
 }
 
-// Resilient selectors for details card
-function getName() {
-  const el = document.querySelector('h1');
-  return el ? el.textContent.trim() : '';
+// Locate the active details panel container on the screen
+function getDetailsPanel() {
+  // The details panel always contains a "Directions" button.
+  const directionsBtn = document.querySelector('button[data-item-id="directions"]') || 
+                        document.querySelector('button[aria-label*="Directions"]');
+  if (directionsBtn) {
+    let parent = directionsBtn.parentElement;
+    while (parent && parent !== document.body) {
+      if (parent.querySelector('h1')) {
+        return parent;
+      }
+      parent = parent.parentElement;
+    }
+  }
+  return null;
 }
 
-function getCategory() {
+// Helper to extract clean text from detail buttons, removing SVG glyphs
+function getCleanText(selector, root = document) {
+  const el = root.querySelector(selector);
+  if (!el) return '';
+  
+  // Target the specific text container inside the button that Google uses (Io6YTe or RogA2c)
+  const textEl = el.querySelector('.Io6YTe') || el.querySelector('.RogA2c') || el.querySelector('.fontBodyMedium') || el;
+  return textEl.textContent.trim();
+}
+
+// Resilient selectors for details card
+function getName(panel, cardName = '') {
+  const root = panel || document;
+  
+  // 1. Try h1 with class DUwDvf (highly stable class for place title)
+  const classTitle = root.querySelector('h1.DUwDvf');
+  if (classTitle && classTitle.textContent.trim()) {
+    const txt = classTitle.textContent.trim();
+    if (txt !== 'Results' && !txt.toLowerCase().includes('results for')) {
+      return txt;
+    }
+  }
+  
+  // 2. Try inside the details panel H1
+  if (panel) {
+    const h1 = panel.querySelector('h1');
+    if (h1 && h1.textContent.trim()) {
+      const txt = h1.textContent.trim();
+      if (txt !== 'Results' && !txt.toLowerCase().includes('results for')) {
+        return txt;
+      }
+    }
+  }
+  
+  // 3. Find any H1 that is not the search results header
+  const h1s = Array.from(document.querySelectorAll('h1'));
+  for (const h1 of h1s) {
+    const text = h1.textContent.trim();
+    if (text && 
+        !text.toLowerCase().startsWith('results for') && 
+        !text.toLowerCase().includes('search results') && 
+        text !== 'Results' && 
+        text !== 'Search') {
+      return text;
+    }
+  }
+  
+  // 4. Fallback to card name extracted from results list (which is highly accurate)
+  return cardName || '';
+}
+
+function getCategory(panel) {
+  const root = panel || document;
+  
   // 1. Direct category button
-  let el = document.querySelector('button[jsaction="pane.rating.category"]');
+  let el = root.querySelector('button[jsaction="pane.rating.category"]') || 
+           root.querySelector('button[jsaction*="category"]');
   if (el) return el.textContent.trim();
   
   // 2. Class fallback
-  el = document.querySelector('.DkEaCc');
+  el = root.querySelector('.DkEaCc');
   if (el) return el.textContent.trim();
   
-  // 3. Structural fallback: text sibling to rating
-  const ratingEl = document.querySelector('div.F7nice');
-  if (ratingEl && ratingEl.nextElementSibling) {
-    const txt = ratingEl.nextElementSibling.textContent.replace('·', '').trim();
-    if (txt && txt.length < 30) return txt;
+  // 3. Sibling of rating stars
+  const ratingEl = root.querySelector('div.F7nice');
+  if (ratingEl) {
+    const parent = ratingEl.parentElement;
+    if (parent) {
+      const buttons = Array.from(parent.querySelectorAll('button'));
+      const catBtn = buttons.find(b => !b.querySelector('span') && b.textContent.trim().length > 2 && !b.textContent.includes('review') && !b.textContent.includes('★'));
+      if (catBtn) return catBtn.textContent.trim();
+      
+      const spans = Array.from(parent.querySelectorAll('span'));
+      const catSpan = spans.find(s => s.textContent.trim().length > 2 && !s.textContent.includes('review') && !s.textContent.includes('★') && !s.textContent.includes('·'));
+      if (catSpan) return catSpan.textContent.trim();
+    }
   }
   return '';
 }
 
-function getRating() {
-  const el = document.querySelector('div.F7nice span[aria-hidden="true"]');
+function getRating(panel) {
+  const root = panel || document;
+  const el = root.querySelector('div.F7nice span[aria-hidden="true"]');
   if (el) {
     const val = parseFloat(el.textContent.trim().replace(',', '.'));
     if (!isNaN(val)) return val;
   }
   
-  const parent = document.querySelector('div.F7nice');
+  const parent = root.querySelector('div.F7nice');
   if (parent) {
     const aria = parent.getAttribute('aria-label');
     if (aria) {
@@ -107,15 +181,16 @@ function getRating() {
   return 0.0;
 }
 
-function getReviewsCount() {
-  const el = document.querySelector('button[jsaction="pane.rating.moreReviews"]');
+function getReviewsCount(panel) {
+  const root = panel || document;
+  const el = root.querySelector('button[jsaction="pane.rating.moreReviews"]');
   if (el) {
     const text = el.textContent.trim();
     const match = text.match(/(\d+[\d,.]*)/);
     if (match) return parseInt(match[1].replace(/[,.]/g, ''), 10) || 0;
   }
   
-  const parent = document.querySelector('div.F7nice');
+  const parent = root.querySelector('div.F7nice');
   if (parent) {
     const text = parent.textContent;
     const match = text.match(/\((\d+[\d,.]*)\)/);
@@ -124,17 +199,19 @@ function getReviewsCount() {
   return 0;
 }
 
-function getAddress() {
-  // 1. Data-item-id
-  let el = document.querySelector('button[data-item-id="address"]');
-  if (el) return el.textContent.trim();
+function getAddress(panel) {
+  const root = panel || document;
+  
+  // 1. Data-item-id (clean text extract)
+  let text = getCleanText('button[data-item-id="address"]', root);
+  if (text) return text;
   
   // 2. Aria label match
-  el = document.querySelector('button[aria-label^="Address:"]');
+  let el = root.querySelector('button[aria-label^="Address:"]');
   if (el) return el.getAttribute('aria-label').replace('Address:', '').trim();
   
   // 3. Iterate buttons looking for address keywords
-  const buttons = document.querySelectorAll('button');
+  const buttons = root.querySelectorAll('button');
   for (const btn of buttons) {
     const aria = btn.getAttribute('aria-label');
     if (aria && aria.toLowerCase().includes('address:')) {
@@ -144,21 +221,23 @@ function getAddress() {
   return '';
 }
 
-function getPhone() {
-  // 1. Data-item-id
-  let el = document.querySelector('button[data-item-id^="phone:tel:"]');
-  if (el) return el.textContent.trim();
+function getPhone(panel) {
+  const root = panel || document;
+  
+  // 1. Data-item-id (clean text extract)
+  let text = getCleanText('button[data-item-id^="phone:tel:"]', root);
+  if (text) return text;
   
   // 2. Anchor href
-  el = document.querySelector('a[href^="tel:"]');
+  let el = root.querySelector('a[href^="tel:"]');
   if (el) return el.getAttribute('href').replace('tel:', '').trim();
   
   // 3. Aria label match
-  el = document.querySelector('button[aria-label^="Phone:"]');
+  el = root.querySelector('button[aria-label^="Phone:"]');
   if (el) return el.getAttribute('aria-label').replace('Phone:', '').trim();
   
   // 4. Iterate buttons looking for phone keywords
-  const buttons = document.querySelectorAll('button');
+  const buttons = root.querySelectorAll('button');
   for (const btn of buttons) {
     const aria = btn.getAttribute('aria-label');
     if (aria && aria.toLowerCase().includes('phone:')) {
@@ -168,45 +247,101 @@ function getPhone() {
   return '';
 }
 
-function getWebsite() {
+function getWebsite(panel) {
+  const root = panel || document;
+  
   // 1. Data-item-id
-  let el = document.querySelector('a[data-item-id="authority"]');
+  let el = root.querySelector('a[data-item-id="authority"]');
   if (el) return el.getAttribute('href') || el.textContent.trim();
   
   // 2. Aria label match
-  el = document.querySelector('a[aria-label^="Website:"]');
+  el = root.querySelector('a[aria-label^="Website:"]');
   if (el) return el.getAttribute('href') || el.getAttribute('aria-label').replace('Website:', '').trim();
   
   // 3. Find any non-Google external link in details panel
-  const links = document.querySelectorAll('a[href*="http"]');
+  const links = root.querySelectorAll('a[href*="http"]');
   for (const link of links) {
     const href = link.href;
-    if (!href.includes('google.com') && !href.includes('gstatic.com')) {
+    if (!href.includes('google.com') && !href.includes('gstatic.com') && !href.includes('facebook.com') && !href.includes('instagram.com') && !href.includes('twitter.com') && !href.includes('linkedin.com')) {
       return href;
     }
   }
   return '';
 }
 
-function getPlusCode() {
-  let el = document.querySelector('button[data-item-id="oloc"]');
-  if (el) return el.textContent.trim();
+function getPlusCode(panel) {
+  const root = panel || document;
   
-  el = document.querySelector('button[aria-label^="Plus code:"]');
+  // 1. Data-item-id (clean text extract)
+  let text = getCleanText('button[data-item-id="oloc"]', root);
+  if (text) return text;
+  
+  let el = root.querySelector('button[aria-label^="Plus code:"]');
   if (el) return el.getAttribute('aria-label').replace('Plus code:', '').trim();
   return '';
 }
 
+// Scrape Claimed status of business (crucial for selling GMB/web services)
+function getClaimedStatus(panel) {
+  const root = panel || document;
+  const textContent = root.textContent || '';
+  
+  if (textContent.includes('Claim this business') || textContent.includes('Own this business?')) {
+    return 'Unclaimed';
+  }
+  return 'Claimed';
+}
+
+// Scrape Social Media Profiles
+function getSocialLinks(panel) {
+  const root = panel || document;
+  const social = {
+    facebook: '',
+    instagram: '',
+    twitter: '',
+    linkedin: '',
+    youtube: ''
+  };
+  
+  const links = Array.from(root.querySelectorAll('a[href*="http"]'));
+  for (const link of links) {
+    const href = link.href.toLowerCase();
+    
+    // Exclude sharing buttons
+    if (href.includes('sharer') || href.includes('share') || href.includes('intent/tweet') || href.includes('twitter.com/share')) {
+      continue;
+    }
+    
+    if (href.includes('facebook.com')) social.facebook = link.href;
+    else if (href.includes('instagram.com')) social.instagram = link.href;
+    else if (href.includes('twitter.com') || href.includes('x.com')) social.twitter = link.href;
+    else if (href.includes('linkedin.com')) social.linkedin = link.href;
+    else if (href.includes('youtube.com')) social.youtube = link.href;
+  }
+  return social;
+}
+
 // Extraction logic for the current place
-async function scrapeCurrentPlace() {
-  const name = getName();
-  const category = getCategory();
-  const rating = getRating();
-  const reviews = getReviewsCount();
-  const address = getAddress();
-  const phone = getPhone();
-  const website = getWebsite();
-  const plusCode = getPlusCode();
+async function scrapeCurrentPlace(cardName = '') {
+  const panel = getDetailsPanel();
+  
+  // Extract all details using the active details panel
+  const name = getName(panel, cardName);
+  const category = getCategory(panel);
+  const rating = getRating(panel);
+  const reviews = getReviewsCount(panel);
+  const address = getAddress(panel);
+  const phone = getPhone(panel);
+  const website = getWebsite(panel);
+  const plusCode = getPlusCode(panel);
+  const claimedStatus = getClaimedStatus(panel);
+  const social = getSocialLinks(panel);
+  
+  // Determine website security
+  let isWebsiteSecure = 'No Website';
+  if (website) {
+    isWebsiteSecure = website.toLowerCase().startsWith('https://') ? 'Secure (HTTPS)' : 'Insecure (HTTP)';
+  }
   
   // Get Lat/Lng from URL
   const url = window.location.href;
@@ -222,6 +357,13 @@ async function scrapeCurrentPlace() {
     address,
     phone,
     website,
+    isWebsiteSecure,
+    claimedStatus,
+    facebook: social.facebook,
+    instagram: social.instagram,
+    linkedin: social.linkedin,
+    twitter: social.twitter,
+    youtube: social.youtube,
     mapsUrl: url,
     lat,
     lng,
@@ -292,7 +434,13 @@ async function runScrapingLoop() {
       logToDashboard('No new results visible. Scrolling feed container down...', 'system');
       
       const previousScrollHeight = feed.scrollHeight;
+      
+      // Powerful Scroll Wiggle to trigger Google Maps lazy loading
       feed.scrollTop = feed.scrollHeight;
+      await sleep(500);
+      feed.scrollTop = feed.scrollHeight - 200; // scroll up slightly
+      await sleep(300);
+      feed.scrollTop = feed.scrollHeight; // scroll down again
       
       await sleep(2500); // Wait for new results to render
       
@@ -319,30 +467,34 @@ async function runScrapingLoop() {
     linkEl.scrollIntoView({ block: 'center', behavior: 'smooth' });
     await sleep(600);
     
-    // Extract name from the card if possible for log reference
-    let cardName = 'Unknown Place';
+    // Extract name from the card in the list (which is always accurate)
+    let cardName = '';
     const cardTitleEl = linkEl.closest('div.UaZB8f') || linkEl.closest('div.Nv2y3c') || linkEl;
     if (cardTitleEl) {
       const nameEl = cardTitleEl.querySelector('.qBF1Pd') || cardTitleEl.querySelector('.fontHeadlineSmall');
       if (nameEl) cardName = nameEl.textContent.trim();
     }
     
-    logToDashboard(`Opening detail panel for: "${cardName}"...`, 'system');
+    logToDashboard(`Opening detail panel for: "${cardName || 'Business'}"...`, 'system');
     
-    // Click the card to open details panel
-    linkEl.click();
+    // Click the card to open details panel (with parent fallback)
+    try {
+      linkEl.click();
+    } catch (e) {
+      linkEl.parentElement.click();
+    }
     
     // Wait for details card to load
-    // We poll and wait for the URL to change to the clicked place AND the title to load
+    // We poll and wait for the URL to change to the clicked place AND the H1 title to load
     let loaded = false;
     const startTime = Date.now();
     
     while (Date.now() - startTime < 6000) { // Timeout after 6 seconds
       const currentUrl = window.location.href;
-      const h1Text = getName();
+      const h1Text = getName(getDetailsPanel(), cardName);
       
-      // If URL matches and H1 is populated
-      if (currentUrl.includes('/maps/place/') && h1Text) {
+      // If URL matches and H1 is populated and is not the generic 'Results'
+      if (currentUrl.includes('/maps/place/') && h1Text && h1Text !== 'Results') {
         loaded = true;
         break;
       }
@@ -350,7 +502,7 @@ async function runScrapingLoop() {
     }
     
     if (!loaded) {
-      logToDashboard(`Warning: Detail panel did not load for "${cardName}" within 6s. Skipping...`, 'warning');
+      logToDashboard(`Warning: Detail panel did not load for "${cardName || 'Business'}" within 6s. Skipping...`, 'warning');
       scrapedUrls.add(placeUrl); // Mark as scraped to avoid loop lock
       continue;
     }
@@ -361,12 +513,7 @@ async function runScrapingLoop() {
     
     // Scrape details!
     try {
-      const leadData = await scrapeCurrentPlace();
-      
-      // Safety check: ensure we got a name
-      if (!leadData.name) {
-        leadData.name = cardName;
-      }
+      const leadData = await scrapeCurrentPlace(cardName);
       
       // Add to scraped sets
       scrapedUrls.add(placeUrl);
@@ -382,7 +529,7 @@ async function runScrapingLoop() {
       logToDashboard(`Successfully extracted: "${leadData.name}"`, 'success');
       
     } catch (err) {
-      logToDashboard(`Error scraping details for "${cardName}": ${err.message}`, 'error');
+      logToDashboard(`Error scraping details: ${err.message}`, 'error');
       scrapedUrls.add(placeUrl); // Mark to prevent loop lock
     }
     
@@ -400,7 +547,6 @@ async function runScrapingLoop() {
 }
 
 // Listen for messages from background/dashboard
-chrome.runtime.onMessageListener = null; // Clear if any
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'START_SCRAPING') {
     if (!isScraping) {
