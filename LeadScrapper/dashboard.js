@@ -121,7 +121,9 @@ function renderTable() {
       (lead.category && lead.category.toLowerCase().includes(q)) ||
       (lead.phone && lead.phone.toLowerCase().includes(q)) ||
       (lead.address && lead.address.toLowerCase().includes(q)) ||
-      (lead.website && lead.website.toLowerCase().includes(q))
+      (lead.website && lead.website.toLowerCase().includes(q)) ||
+      (lead.claimedStatus && lead.claimedStatus.toLowerCase().includes(q)) ||
+      (lead.isWebsiteSecure && lead.isWebsiteSecure.toLowerCase().includes(q))
     );
   });
 
@@ -135,19 +137,38 @@ function renderTable() {
   }
 
   tableBody.innerHTML = filtered.map((lead, idx) => {
-    const websiteCell = lead.website 
-      ? `<a href="${lead.website}" target="_blank" style="color: var(--accent-blue); text-decoration: none;">Link ↗</a>` 
-      : '<span style="color: var(--text-secondary);">--</span>';
+    // Website Security and Link Cell
+    let websiteCell = '';
+    if (lead.website) {
+      if (lead.isWebsiteSecure === 'Secure (HTTPS)') {
+        websiteCell = `<a href="${lead.website}" target="_blank" style="color: var(--color-success); text-decoration: none; font-weight: 500;" title="Secure Website">Link ↗ <span style="font-size: 9px; opacity: 0.85;">(Secure)</span></a>`;
+      } else {
+        websiteCell = `<a href="${lead.website}" target="_blank" style="color: var(--color-warning); text-decoration: none; font-weight: 500;" title="Insecure Website - Good Pitch Target!">Link ↗ <span style="font-size: 9px; opacity: 0.9;">(HTTP ⚠️)</span></a>`;
+      }
+    } else {
+      websiteCell = '<span style="color: var(--color-danger); font-weight: 600; font-size: 10.5px;">No Website ❌</span>';
+    }
       
     const phoneCell = lead.phone 
       ? `<span style="font-weight: 500;">${lead.phone}</span>` 
       : '<span style="color: var(--text-secondary);">--</span>';
       
+    // Claimed Status Badge next to name
+    let claimedBadge = '';
+    if (lead.claimedStatus === 'Unclaimed') {
+      claimedBadge = `<span style="font-size: 8.5px; padding: 1.5px 5px; background: rgba(239, 68, 68, 0.15); color: var(--color-danger); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 4px; margin-left: 6px; font-weight: 700; letter-spacing: 0.25px;" title="Unclaimed Profile - High Value Lead!">UNCLAIMED</span>`;
+    }
+      
     return `
       <tr>
         <td style="color: var(--accent-blue); font-weight: 600;">${idx + 1}</td>
-        <td style="font-weight: 600;" title="${lead.name || ''}">${lead.name || 'Unknown'}</td>
-        <td><span class="badge" style="background: rgba(255,255,255,0.05); color: var(--text-primary); border: 1px solid var(--border-color);">${lead.category || '--'}</span></td>
+        <td style="font-weight: 600;" title="${lead.name || ''}">
+          <div style="display: flex; align-items: center; gap: 4px; max-width: 100%; overflow: hidden;">
+            <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${lead.name || 'Unknown'}</span>
+            ${claimedBadge}
+          </div>
+        </td>
+        <td><span class="badge" style="background: rgba(255,255,255,0.04); color: var(--text-primary); border: 1px solid var(--border-color);">${lead.category || '--'}</span></td>
         <td>${phoneCell}</td>
         <td>${websiteCell}</td>
         <td style="color: var(--color-warning); font-weight: 600;">★ ${lead.rating ? lead.rating.toFixed(1) : '0.0'}</td>
@@ -372,9 +393,16 @@ function exportCSV() {
       'Address', 
       'Phone', 
       'Website', 
-      'Google Maps URL', 
+      'Is Website Secure',
+      'Claimed Status',
+      'Facebook',
+      'Instagram',
+      'LinkedIn',
+      'Twitter',
+      'YouTube',
       'Latitude', 
       'Longitude', 
+      'Google Maps URL', 
       'Plus Code'
     ];
     
@@ -389,9 +417,16 @@ function exportCSV() {
         lead.address || '',
         lead.phone || '',
         lead.website || '',
-        lead.mapsUrl || '',
+        lead.isWebsiteSecure || '',
+        lead.claimedStatus || '',
+        lead.facebook || '',
+        lead.instagram || '',
+        lead.linkedin || '',
+        lead.twitter || '',
+        lead.youtube || '',
         lead.lat || '',
         lead.lng || '',
+        lead.mapsUrl || '',
         lead.plusCode || ''
       ];
       
@@ -404,7 +439,8 @@ function exportCSV() {
       csvRows.push(escapedRow);
     }
     
-    const csvContent = csvRows.join('\n');
+    // Crucial: Prepend the UTF-8 BOM (\uFEFF) to make Excel load UTF-8 encoding properly!
+    const csvContent = '\uFEFF' + csvRows.join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     
